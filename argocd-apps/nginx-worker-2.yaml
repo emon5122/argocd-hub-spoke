@@ -10,7 +10,7 @@ spec:
     targetRevision: main
     path: apps/worker-2/nginx
   destination:
-    server: https://k3d-worker-2-server-0:6443
+    server: https://172.19.0.6:6443
     namespace: nginx-worker-2
   syncPolicy:
     automated:

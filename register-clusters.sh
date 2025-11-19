@@ -16,8 +16,9 @@ WORKER2_CONTEXT="k3d-worker-2"
 get_internal_server_url() {
     local context=$1
     local cluster_name=$2
-    # For k3d clusters, use the internal Docker network address
-    echo "https://k3d-${cluster_name}-server-0:6443"
+    # Get the IP address from Docker (first IP on k3d-argocd-control network)
+    local ip=$(docker inspect k3d-${cluster_name}-server-0 --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' | awk '{print $1}')
+    echo "https://${ip}:6443"
 }
 
 # Get internal server URLs
