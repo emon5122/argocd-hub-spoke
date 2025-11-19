@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-worker-2
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/emon5122/argocd-hub-spoke.git
+    targetRevision: main
+    path: apps/worker-2/nginx
+  destination:
+    server: https://k3d-worker-2-server-0:6443
+    namespace: nginx-worker-2
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
