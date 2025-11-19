@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: nginx-worker-1
+  name: worker-1-nginx
   namespace: argocd
 spec:
   project: default
@@ -11,7 +11,7 @@ spec:
     path: apps/worker-1/nginx
   destination:
     server: https://172.19.0.5:6443
-    namespace: nginx-worker-1
+    namespace: nginx
   syncPolicy:
     automated:
       prune: true

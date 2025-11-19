@@ -1,77 +1,194 @@
 #!/bin/bash
-
 set -e
 
-echo "🔗 Registering worker clusters with ArgoCD..."
-echo ""
+echo "=== Registering Worker Clusters with ArgoCD ==="
 
-# Switch to control plane cluster
+# Get worker cluster IPs from k3d-argocd-control network
+WORKER1_IP=$(docker inspect k3d-worker-1-server-0 --format '{{index .NetworkSettings.Networks "k3d-argocd-control" "IPAddress"}}')
+WORKER2_IP=$(docker inspect k3d-worker-2-server-0 --format '{{index .NetworkSettings.Networks "k3d-argocd-control" "IPAddress"}}')
+
+echo "Worker 1 IP: $WORKER1_IP"
+echo "Worker 2 IP: $WORKER2_IP"
+
+# Switch to control plane context
 kubectl config use-context k3d-argocd-control
 
-# Get worker cluster contexts
-WORKER1_CONTEXT="k3d-worker-1"
-WORKER2_CONTEXT="k3d-worker-2"
+# Login to ArgoCD
+ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+argocd login localhost:8090 --username admin --password "$ARGOCD_PASSWORD" --insecure
 
-# Function to get the internal cluster server URL
-get_internal_server_url() {
-    local context=$1
-    local cluster_name=$2
-    # Get the IP address from Docker (first IP on k3d-argocd-control network)
-    local ip=$(docker inspect k3d-${cluster_name}-server-0 --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' | awk '{print $1}')
-    echo "https://${ip}:6443"
-}
-
-# Get internal server URLs
-WORKER1_SERVER=$(get_internal_server_url "$WORKER1_CONTEXT" "worker-1")
-WORKER2_SERVER=$(get_internal_server_url "$WORKER2_CONTEXT" "worker-2")
-
-echo "📌 Worker 1 internal server: $WORKER1_SERVER"
-echo "📌 Worker 2 internal server: $WORKER2_SERVER"
 echo ""
+echo "=== Creating Service Accounts on Worker Clusters ==="
 
-# Function to create cluster secret
-create_cluster_secret() {
-    local cluster_name=$1
-    local context=$2
-    local server_url=$3
-    
-    echo "Adding cluster: $cluster_name"
-    
-    # Get the service account token
-    kubectl config use-context "$context"
-    
-    # Create token for the service account (Kubernetes 1.24+)
-    TOKEN=$(kubectl create token argocd-manager -n kube-system --duration=87600h)
-    
-    # Get CA certificate
-    CA_CERT=$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
-    
-    # Switch back to control plane
-    kubectl config use-context k3d-argocd-control
-    
-    # Create the secret in ArgoCD namespace (with insecure: true for k3d cross-network access)
-    kubectl create secret generic cluster-${cluster_name} \
-        -n argocd \
-        --from-literal=name=${cluster_name} \
-        --from-literal=server=${server_url} \
-        --from-literal=config="{\"bearerToken\":\"${TOKEN}\",\"tlsClientConfig\":{\"insecure\":true}}" \
-        --dry-run=client -o yaml | kubectl apply -f -
-    
-    # Label the secret so ArgoCD recognizes it
-    kubectl label secret cluster-${cluster_name} \
-        -n argocd \
-        argocd.argoproj.io/secret-type=cluster \
-        --overwrite
-    
-    echo "✅ Cluster $cluster_name registered"
-    echo ""
-}
+# Create service account on worker-1
+kubectl config use-context k3d-worker-1
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-manager
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argocd-manager-role
+rules:
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- nonResourceURLs:
+  - '*'
+  verbs:
+  - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-manager-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argocd-manager-role
+subjects:
+- kind: ServiceAccount
+  name: argocd-manager
+  namespace: kube-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-manager-token
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: argocd-manager
+type: kubernetes.io/service-account-token
+EOF
 
-# Register worker clusters
-create_cluster_secret "worker-1" "$WORKER1_CONTEXT" "$WORKER1_SERVER"
-create_cluster_secret "worker-2" "$WORKER2_CONTEXT" "$WORKER2_SERVER"
+# Wait for token to be generated
+echo "Waiting for worker-1 token..."
+sleep 3
 
-echo "🎉 All worker clusters registered with ArgoCD!"
+# Get worker-1 token and CA
+WORKER1_TOKEN=$(kubectl -n kube-system get secret argocd-manager-token -o jsonpath='{.data.token}' | base64 -d)
+WORKER1_CA=$(kubectl -n kube-system get secret argocd-manager-token -o jsonpath='{.data.ca\.crt}')
+
+# Create service account on worker-2
+kubectl config use-context k3d-worker-2
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-manager
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argocd-manager-role
+rules:
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- nonResourceURLs:
+  - '*'
+  verbs:
+  - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-manager-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argocd-manager-role
+subjects:
+- kind: ServiceAccount
+  name: argocd-manager
+  namespace: kube-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-manager-token
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: argocd-manager
+type: kubernetes.io/service-account-token
+EOF
+
+# Wait for token to be generated
+echo "Waiting for worker-2 token..."
+sleep 3
+
+# Get worker-2 token and CA
+WORKER2_TOKEN=$(kubectl -n kube-system get secret argocd-manager-token -o jsonpath='{.data.token}' | base64 -d)
+WORKER2_CA=$(kubectl -n kube-system get secret argocd-manager-token -o jsonpath='{.data.ca\.crt}')
+
 echo ""
-echo "Verify in ArgoCD UI: Settings > Clusters"
-echo "Or run: kubectl get secrets -n argocd -l argocd.argoproj.io/secret-type=cluster"
+echo "=== Registering Clusters in ArgoCD ==="
+
+# Switch back to control plane
+kubectl config use-context k3d-argocd-control
+
+# Register worker-1
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: worker-1-cluster
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+type: Opaque
+stringData:
+  name: worker-1
+  server: https://$WORKER1_IP:6443
+  config: |
+    {
+      "bearerToken": "$WORKER1_TOKEN",
+      "tlsClientConfig": {
+        "insecure": false,
+        "caData": "$WORKER1_CA"
+      }
+    }
+EOF
+
+# Register worker-2
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: worker-2-cluster
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+type: Opaque
+stringData:
+  name: worker-2
+  server: https://$WORKER2_IP:6443
+  config: |
+    {
+      "bearerToken": "$WORKER2_TOKEN",
+      "tlsClientConfig": {
+        "insecure": false,
+        "caData": "$WORKER2_CA"
+      }
+    }
+EOF
+
+echo ""
+echo "=== Registered Clusters ==="
+argocd cluster list
+
+echo ""
+echo "✅ Worker clusters registered successfully!"
