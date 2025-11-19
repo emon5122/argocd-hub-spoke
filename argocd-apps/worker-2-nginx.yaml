@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: worker-2-nginx
-  namespace: argocd
+  namespace: worker-2-agent
 spec:
   project: default
   source:
