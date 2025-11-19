@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: worker-1-nginx
-  namespace: argocd
+  namespace: worker-1-agent
 spec:
   project: default
   source:
@@ -10,7 +10,7 @@ spec:
     targetRevision: main
     path: apps/worker-1/nginx
   destination:
-    server: https://10.27.27.11:9090?agentName=worker-1-agent
+    name: worker-1-agent
     namespace: nginx
   syncPolicy:
     automated:
