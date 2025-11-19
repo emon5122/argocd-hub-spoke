@@ -5,11 +5,12 @@ metadata:
 servers: 1
 agents: 0
 image: rancher/k3s:v1.28.5-k3s1
+network: k3d-argocd-network
 ports:
   - port: 8081:80
     nodeFilters:
       - loadbalancer
-  - port: 8444:443
+  - port: 8445:443
     nodeFilters:
       - loadbalancer
 options:

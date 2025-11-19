@@ -5,6 +5,7 @@ metadata:
 servers: 1
 agents: 0
 image: rancher/k3s:v1.28.5-k3s1
+network: k3d-argocd-network
 ports:
   - port: 8080:80
     nodeFilters:
@@ -12,6 +13,10 @@ ports:
   - port: 8443:443
     nodeFilters:
       - loadbalancer
+  # ArgoCD Agent Principal gRPC port
+  - port: 8444:8444
+    nodeFilters:
+      - server:0
 options:
   k3d:
     wait: true
