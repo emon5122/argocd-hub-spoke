@@ -49,12 +49,12 @@ create_cluster_secret() {
     # Switch back to control plane
     kubectl config use-context k3d-argocd-control
     
-    # Create the secret in ArgoCD namespace
+    # Create the secret in ArgoCD namespace (with insecure: true for k3d cross-network access)
     kubectl create secret generic cluster-${cluster_name} \
         -n argocd \
         --from-literal=name=${cluster_name} \
         --from-literal=server=${server_url} \
-        --from-literal=config="{\"bearerToken\":\"${TOKEN}\",\"tlsClientConfig\":{\"insecure\":false,\"caData\":\"${CA_CERT}\"}}" \
+        --from-literal=config="{\"bearerToken\":\"${TOKEN}\",\"tlsClientConfig\":{\"insecure\":true}}" \
         --dry-run=client -o yaml | kubectl apply -f -
     
     # Label the secret so ArgoCD recognizes it
