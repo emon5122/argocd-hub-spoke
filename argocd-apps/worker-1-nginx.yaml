@@ -10,7 +10,7 @@ spec:
     targetRevision: main
     path: apps/worker-1/nginx
   destination:
-    server: https://172.19.0.5:6443
+    server: https://10.27.27.11:9090?agentName=worker-1-agent
     namespace: nginx
   syncPolicy:
     automated:
